@@ -1,71 +1,80 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-    
-class TaskCreate(BaseModel):
-    title:str
-class TaskUpdate(BaseModel):
-    title:str | None = None
-    done:bool | None = None
+from sqlmodel import Session, select
+
+from database import engine, create_db_and_tables
+from models import Task
+
 app = FastAPI(
     title="Task API",
     version="1.0"
 )
 
 
-tasks = [
-    {
-        "id":1,
-        "title":"Learn FastAPI",
-        "done":False
-    },
-    {
-        "id":2,
-        "title":"Build CRUD API",
-        "done":False
-    },
-    {
-        "id":3,
-        "title":"Upload project",
-        "done":False
-    }
-]
+class TaskCreate(BaseModel):
+    title: str
+
+
+class TaskUpdate(BaseModel):
+    title: str | None = None
+    done: bool | None = None
+
+
+@app.on_event("startup")
+def startup():
+
+    create_db_and_tables()
+
+    with Session(engine) as session:
+
+        tasks = session.exec(select(Task)).all()
+
+        if len(tasks) == 0:
+            session.add(Task(title="Learn FastAPI"))
+            session.add(Task(title="Build CRUD API"))
+            session.add(Task(title="Upload project"))
+            session.commit()
 
 
 @app.get("/")
 def root():
     return {
-        "name":"Task API",
-        "version":"1.0",
-        "endpoints":["/tasks"]
+        "name": "Task API",
+        "version": "1.0",
+        "endpoints": ["/tasks"]
     }
 
 
 @app.get("/health")
 def health():
-    return {
-        "status":"ok"
-    }
+    return {"status": "ok"}
 
 
 @app.get("/tasks")
 def get_tasks():
-    return tasks
+
+    with Session(engine) as session:
+        return session.exec(select(Task)).all()
 
 
 @app.get("/tasks/{task_id}")
-def get_task(task_id:int):
+def get_task(task_id: int):
 
-    for task in tasks:
-        if task["id"] == task_id:
-            return task
+    with Session(engine) as session:
 
-    raise HTTPException(
-        status_code=404,
-        detail=f"Task {task_id} not found"
-    )
+        task = session.get(Task, task_id)
+
+        if task is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Task {task_id} not found"
+            )
+
+        return task
+
 
 @app.post("/tasks", status_code=201)
-def create_task(task:TaskCreate):
+def create_task(task: TaskCreate):
 
     if not task.title.strip():
         raise HTTPException(
@@ -73,51 +82,60 @@ def create_task(task:TaskCreate):
             detail="Title cannot be empty"
         )
 
+    with Session(engine) as session:
 
-    new_task = {
-        "id":len(tasks)+1,
-        "title":task.title,
-        "done":False
-    }
+        new_task = Task(
+            title=task.title,
+            done=False
+        )
 
+        session.add(new_task)
+        session.commit()
+        session.refresh(new_task)
 
-    tasks.append(new_task)
+        return new_task
 
-    return new_task
 
 @app.put("/tasks/{task_id}")
-def update_task(task_id:int, updated:TaskUpdate):
+def update_task(task_id: int, updated: TaskUpdate):
 
-    for task in tasks:
+    with Session(engine) as session:
 
-        if task["id"] == task_id:
+        task = session.get(Task, task_id)
 
-            if updated.title:
-                task["title"]=updated.title
+        if task is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Task {task_id} not found"
+            )
 
-            if updated.done is not None:
-                task["done"]=updated.done
+        if updated.title is not None:
+            task.title = updated.title
 
-            return task
+        if updated.done is not None:
+            task.done = updated.done
 
+        session.add(task)
+        session.commit()
+        session.refresh(task)
 
-    raise HTTPException(
-        status_code=404,
-        detail=f"Task {task_id} not found"
-    )
-@app.delete("/tasks/{task_id}",status_code=204)
-def delete_task(task_id:int):
-
-    for index,task in enumerate(tasks):
-
-        if task["id"]==task_id:
-
-            tasks.pop(index)
-
-            return
+        return task
 
 
-    raise HTTPException(
-        status_code=404,
-        detail=f"Task {task_id} not found"
-    )
+@app.delete("/tasks/{task_id}", status_code=204)
+def delete_task(task_id: int):
+
+    with Session(engine) as session:
+
+        task = session.get(Task, task_id)
+
+        if task is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Task {task_id} not found"
+            )
+
+        session.delete(task)
+        session.commit()
+
+        return

@@ -104,13 +104,24 @@ Expected response:
 
 # Swagger UI
 
-Add your screenshot here:
+![alt text](image.png)
 
-```
-screenshots/swagger.png
-```
+
 
 ---
+## Database
+
+This project uses SQLite for persistent storage.
+
+The database file (`tasks.db`) is automatically created when the application starts.
+
+No additional database server is required.
+
+### Example SQL Query
+
+```sql
+SELECT * FROM task;
+
 
 # Note
 
